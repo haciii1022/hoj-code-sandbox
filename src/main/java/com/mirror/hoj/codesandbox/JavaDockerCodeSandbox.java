@@ -5,8 +5,19 @@ import cn.hutool.core.io.resource.ResourceUtil;
 import cn.hutool.core.util.ArrayUtil;
 import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.async.ResultCallback;
-import com.github.dockerjava.api.command.*;
-import com.github.dockerjava.api.model.*;
+import com.github.dockerjava.api.command.CreateContainerCmd;
+import com.github.dockerjava.api.command.CreateContainerResponse;
+import com.github.dockerjava.api.command.ExecCreateCmdResponse;
+import com.github.dockerjava.api.command.PullImageCmd;
+import com.github.dockerjava.api.command.PullImageResultCallback;
+import com.github.dockerjava.api.command.StatsCmd;
+import com.github.dockerjava.api.model.Bind;
+import com.github.dockerjava.api.model.Frame;
+import com.github.dockerjava.api.model.HostConfig;
+import com.github.dockerjava.api.model.PullResponseItem;
+import com.github.dockerjava.api.model.Statistics;
+import com.github.dockerjava.api.model.StreamType;
+import com.github.dockerjava.api.model.Volume;
 import com.github.dockerjava.core.DockerClientBuilder;
 import com.github.dockerjava.core.command.ExecStartResultCallback;
 import com.mirror.hoj.codesandbox.model.ExecuteCodeRequest;
@@ -22,6 +33,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 @Slf4j
@@ -35,6 +47,7 @@ public class JavaDockerCodeSandbox extends JavaCodeSandboxTemplate {
         String userCodeParentPath = userCodeFile.getParentFile().getAbsolutePath();
         //创建容器，把文件赋值到容器内
         DockerClient dockerClient = DockerClientBuilder.getInstance().build();
+        log.info("dockerClient: {}", dockerClient);
         String image = "openjdk:8-alpine";
         if (FIRST_INIT) {
             PullImageCmd pullImageCmd = dockerClient.pullImageCmd(image);
@@ -58,15 +71,21 @@ public class JavaDockerCodeSandbox extends JavaCodeSandboxTemplate {
 //      FIRST_INIT = false;
         //创建容器
         CreateContainerCmd containerCmd = dockerClient.createContainerCmd(image);
+        log.info("创建容器：{}", containerCmd);
         //挂载文件
         HostConfig hostConfig = new HostConfig();
         hostConfig.withMemory(MEMORY_LIMIT * 1024);
         hostConfig.withMemorySwap(0L);
         hostConfig.withCpuCount(1L);
         hostConfig.withReadonlyRootfs(true);// 设置只读根文件系统,不能写
+        log.info("hostConfig: {}", hostConfig);
+        log.info("开始读取profile.json");
         String profileConfig = ResourceUtil.readUtf8Str("profile.json");
+//        String profileConfig = ResourceUtil.readUtf8Str("/home/Mirror/hoj-code-sandbox/src/main/resources/profile.json");
+        log.info("profileConfig: {}", profileConfig);
         hostConfig.withSecurityOpts(Arrays.asList("seccomp=" + profileConfig));
         hostConfig.setBinds(new Bind(userCodeParentPath, new Volume("/app")));
+        log.info("hostConfig: {}", hostConfig);
         CreateContainerResponse createContainerResponse = containerCmd
                 .withHostConfig(hostConfig)
                 .withNetworkDisabled(true)
@@ -75,17 +94,19 @@ public class JavaDockerCodeSandbox extends JavaCodeSandboxTemplate {
                 .withAttachStderr(true)
                 .withTty(true) //创建一个交互终端
                 .exec();
-//        System.out.println(createContainerResponse);
         String containerId = createContainerResponse.getId();
+        log.info("创建容器：{}", containerId);
         //启动容器
         dockerClient.startContainerCmd(containerId).exec();
+        log.info("启动容器：{}", containerId);
         List<ExecuteMessage> executeMessageList = new ArrayList<>();
-
+        CountDownLatch latch = new CountDownLatch(1);
         final String[] message = {null};
         final String[] errorMessage = {null};
         final long[] maxMemory = {0L};
         final boolean[] timeout = {true};
         for (String inputArgs : inputList) {
+            ExecuteMessage executeMessage = new ExecuteMessage();
             String[] inputArgsArray = inputArgs.split(" ");
             String[] cmdArray = ArrayUtil.append(new String[]{"java", "-cp", "/app", "Main"}, inputArgsArray);
             ExecCreateCmdResponse execCreateCmdResponse = dockerClient.execCreateCmd(containerId)
@@ -95,6 +116,7 @@ public class JavaDockerCodeSandbox extends JavaCodeSandboxTemplate {
                     .withAttachStdout(true)
                     .exec();
             String execId = execCreateCmdResponse.getId();
+            log.info("execId: {}", execId);
             ExecStartResultCallback execStartResultCallback = new ExecStartResultCallback() {
                 @Override
                 public void onNext(Frame frame) {
@@ -114,12 +136,13 @@ public class JavaDockerCodeSandbox extends JavaCodeSandboxTemplate {
                     super.onComplete();
                 }
             };
-            // 获取占用的内存
             StatsCmd statsCmd = dockerClient.statsCmd(containerId);
+            // 获取占用的内存
             ResultCallback<Statistics> statisticsResultCallback = statsCmd.exec(new ResultCallback<Statistics>() {
                 @Override
                 public void onNext(Statistics statistics) {
                     maxMemory[0] = Math.max(statistics.getMemoryStats().getUsage(), maxMemory[0]);
+                    log.info("获取内存使用情况：{}", maxMemory[0]);
                 }
 
                 @Override
@@ -139,7 +162,8 @@ public class JavaDockerCodeSandbox extends JavaCodeSandboxTemplate {
 
                 @Override
                 public void onComplete() {
-
+                    executeMessage.setMemory(maxMemory[0]);
+//                    latch.countDown(); // 通知执行完成
                 }
             });
             statsCmd.exec(statisticsResultCallback);
@@ -155,10 +179,16 @@ public class JavaDockerCodeSandbox extends JavaCodeSandboxTemplate {
                 log.error("程序执行异常");
                 throw new RuntimeException(e);
             }
-            ExecuteMessage executeMessage = new ExecuteMessage();
             long runTime = stopWatch.getLastTaskTimeMillis();
             executeMessage.setTime(runTime);
-            executeMessage.setMemory(maxMemory[0]);
+
+            try {
+                Thread.sleep(200);
+//                latch.await(); // 等待执行完成
+                statisticsResultCallback.onComplete();
+            } catch (InterruptedException e) {
+                executeMessage.setMemory(maxMemory[0]);
+            }
             executeMessage.setErrorMessage(errorMessage[0]);
             executeMessage.setMessage(message[0]);
             executeMessageList.add(executeMessage);

@@ -73,10 +73,10 @@ public class ProcessUtils {
             }
             stopWatch.stop();
             executeMessage.setTime( stopWatch.getLastTaskTimeMillis());
+            executeMessage.setMemory(0L);
         }
         catch (Exception e) {
             log.warn("执行{}时出现异常: ", opName, e);
-            System.out.println(e.getMessage());
         }
         return executeMessage;
     }
