@@ -133,6 +133,7 @@ public class JavaDockerCodeSandbox extends JavaCodeSandboxTemplate {
                 @Override
                 public void onComplete() {
                     timeout[0] = false;
+
                     super.onComplete();
                 }
             };
@@ -162,8 +163,8 @@ public class JavaDockerCodeSandbox extends JavaCodeSandboxTemplate {
 
                 @Override
                 public void onComplete() {
-                    executeMessage.setMemory(maxMemory[0]);
-//                    latch.countDown(); // 通知执行完成
+//                    executeMessage.setMemory(maxMemory[0]);
+                    latch.countDown(); // 通知执行完成
                 }
             });
             statsCmd.exec(statisticsResultCallback);
@@ -181,17 +182,28 @@ public class JavaDockerCodeSandbox extends JavaCodeSandboxTemplate {
             }
             long runTime = stopWatch.getLastTaskTimeMillis();
             executeMessage.setTime(runTime);
-
-            try {
-                Thread.sleep(200);
-//                latch.await(); // 等待执行完成
-                statisticsResultCallback.onComplete();
-            } catch (InterruptedException e) {
-                executeMessage.setMemory(maxMemory[0]);
-            }
             executeMessage.setErrorMessage(errorMessage[0]);
             executeMessage.setMessage(message[0]);
             executeMessageList.add(executeMessage);
+            try {
+                // 等待统计信息收集完成
+                latch.await(2, TimeUnit.SECONDS);
+                executeMessage.setMemory(maxMemory[0]);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                System.out.println("线程中断");
+            }
+            //开一个新线程，十秒钟之后执行删除容器的操作
+            new Thread(() -> {
+                try {
+                    Thread.sleep(10000);
+                    dockerClient.removeContainerCmd(containerId).exec();
+                    log.info("删除容器：{}", containerId);
+                } catch (InterruptedException e) {
+                    log.error("删除容器异常");
+                    throw new RuntimeException(e);
+                }
+            }).start();
         }
         log.info("执行输入用例，获取执行结果列表出参: {}",executeMessageList);
         return executeMessageList;

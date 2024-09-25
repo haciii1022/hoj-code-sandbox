@@ -2,6 +2,7 @@ package com.mirror.hoj.codesandbox;
 
 import cn.hutool.core.io.FileUtil;
 import cn.hutool.core.util.StrUtil;
+import com.mirror.hoj.codesandbox.enums.JudgeInfoMessageEnum;
 import com.mirror.hoj.codesandbox.enums.QuestionSubmitStatusEnum;
 import com.mirror.hoj.codesandbox.model.ExecuteCodeRequest;
 import com.mirror.hoj.codesandbox.model.ExecuteCodeResponse;
@@ -93,12 +94,12 @@ public abstract class JavaCodeSandboxTemplate implements CodeSandbox {
             Process compileProcess = Runtime.getRuntime().exec(compileCmd);
             ExecuteMessage executeMessage = ProcessUtils.runProcessAndGetMessage(compileProcess, "编译");
             if (executeMessage.getExitValue() != 0) {
-                throw new RuntimeException("编译错误");
+                throw new RuntimeException(JudgeInfoMessageEnum.COMPILE_ERROR.getText());
             }
             log.info("编译成功");
             return executeMessage;
         } catch (IOException e) {
-            throw new RuntimeException("编译错误");
+            throw new RuntimeException(JudgeInfoMessageEnum.COMPILE_ERROR.getText());
 //            return getErrorResponse(e);
         }
     }
