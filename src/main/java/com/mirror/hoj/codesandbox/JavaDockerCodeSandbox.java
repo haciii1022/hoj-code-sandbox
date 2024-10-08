@@ -42,6 +42,7 @@ public class JavaDockerCodeSandbox extends JavaCodeSandboxTemplate {
     private static final boolean FIRST_INIT = false;
     private static long TIME_LIMIT = 5000L; //单位ms
     private static long MEMORY_LIMIT = 5000L; //单位kb
+    private static final long DOCKER_MEMORY_MIN = 6 * 1024 * 1024; // docker容器启动最低需要6M
     @Override
     public List<ExecuteMessage> runFile(File userCodeFile, List<String> inputList) {
         String userCodeParentPath = userCodeFile.getParentFile().getAbsolutePath();
@@ -74,7 +75,7 @@ public class JavaDockerCodeSandbox extends JavaCodeSandboxTemplate {
         log.info("创建容器：{}", containerCmd);
         //挂载文件
         HostConfig hostConfig = new HostConfig();
-        hostConfig.withMemory(MEMORY_LIMIT * 1024);
+        hostConfig.withMemory(Math.max(MEMORY_LIMIT * 1024,DOCKER_MEMORY_MIN));
         hostConfig.withMemorySwap(0L);
         hostConfig.withCpuCount(1L);
         hostConfig.withReadonlyRootfs(true);// 设置只读根文件系统,不能写
@@ -194,9 +195,11 @@ public class JavaDockerCodeSandbox extends JavaCodeSandboxTemplate {
                 System.out.println("线程中断");
             }
             //开一个新线程，十秒钟之后执行删除容器的操作
+            log.info("等待5s后删除容器");
             new Thread(() -> {
                 try {
-                    Thread.sleep(10000);
+                    Thread.sleep(5000);
+                    dockerClient.stopContainerCmd(containerId).exec();
                     dockerClient.removeContainerCmd(containerId).exec();
                     log.info("删除容器：{}", containerId);
                 } catch (InterruptedException e) {

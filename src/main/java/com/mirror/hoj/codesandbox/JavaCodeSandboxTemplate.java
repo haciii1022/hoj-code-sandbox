@@ -119,6 +119,7 @@ public abstract class JavaCodeSandboxTemplate implements CodeSandbox {
         //运行class文件，获取结果
         for (String input : inputList) {
             String runCmd = String.format("/www/server/java/jdk1.8.0_371/bin/java -Xmx128m -Dfile.encoding=UTF-8 -cp %s Main %s", userCodeParentPath, input);
+//            String runCmd = String.format("java -Xmx128m -Dfile.encoding=UTF-8 -cp %s Main %s", userCodeParentPath, input);
 //            String runCmd = String.format("java -Xmx128m -Dfile.encoding=UTF-8 -cp %s%s%s -Djava.security.manager=%s Main %s", userCodeParentPath, File.pathSeparator, SECURITY_MANAGER_PATH, SECURITY_MANAGER_CLASS_NAME, input);
             try {
                 Process runProcess = Runtime.getRuntime().exec(runCmd);
