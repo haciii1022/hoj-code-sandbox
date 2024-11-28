@@ -58,7 +58,11 @@
             <artifactId>hutool-all</artifactId>
             <version>5.8.25</version>
         </dependency>
-
+        <dependency>
+            <groupId>com.jcraft</groupId>
+            <artifactId>jsch</artifactId>
+            <version>0.1.55</version>
+        </dependency>
         <!-- https://mvnrepository.com/artifact/com.github.docker-java/docker-java -->
         <dependency>
             <groupId>com.github.docker-java</groupId>

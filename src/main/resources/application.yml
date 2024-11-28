@@ -1,2 +1,7 @@
 server:
   port: 8090
+sftp:
+  remoteHost: 192.168.1.210
+  port: 22
+  username: ubuntu
+  password: fjnuacm102
