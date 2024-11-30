@@ -194,6 +194,7 @@ public class JavaDockerCodeSandbox extends JavaCodeSandboxTemplate {
             long runTime = stopWatch.getLastTaskTimeMillis();
             executeMessage.setTime(runTime);
             executeMessage.setErrorMessage(errorMessage[0]);
+            executeMessage.setOutputFilePath(userOutputFilePath);
             executeMessage.setMessage(message[0]);
             executeMessageList.add(executeMessage);
             try {
