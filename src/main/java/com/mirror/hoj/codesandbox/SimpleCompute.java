@@ -1,13 +1,16 @@
 package com.mirror.hoj.codesandbox;
 
+import java.util.Scanner;
+
 /**
  * @author Mirror
  * @date 2024/8/12
  */
 public class SimpleCompute {
     public static void main(String[] args) {
-        int a = Integer.parseInt(args[0]);
-        int b = Integer.parseInt(args[1]);
-        System.out.println("结果:" + (a + b));
+        Scanner sc = new Scanner(System.in);
+        int a = sc.nextInt();
+        int b = sc.nextInt();
+        System.out.print((a + b));
     }
 }

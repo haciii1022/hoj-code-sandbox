@@ -53,6 +53,7 @@ public final class FileUtil {
         channelSftp = sftpClient.getChannelSftp();
         // 获取文件所在的目录
         String folderPath = Paths.get(fullFilePath).getParent().toString();
+        log.info("folderPath:{}",folderPath);
         ensureDirectoryExists(folderPath);
         try (InputStream inputStream = originalFile.getInputStream()) {
             // 上传文件到远程服务器的指定路径
@@ -67,6 +68,7 @@ public final class FileUtil {
         channelSftp = sftpClient.getChannelSftp();
         // 获取文件所在的目录
         String folderPath = Paths.get(fullFilePath).getParent().toString();
+        log.info("folderPath:{}",folderPath);
         ensureDirectoryExists(folderPath);
         try (InputStream inputStream = Files.newInputStream(originalFile.toPath())) {
             // 上传文件到远程服务器的指定路径
@@ -117,7 +119,7 @@ public final class FileUtil {
             inputStream = channelSftp.get(remoteFilePath);
         } catch (SftpException e) {
             log.error("文件下载失败，远程文件路径：{}", remoteFilePath, e);
-            throw new RuntimeException("执行错误", e);
+            throw new RuntimeException("执行错误: " + e.getMessage(), e);
         }
 
         // 使用 InputStreamResource 将文件流包装成 Resource 对象
@@ -209,7 +211,7 @@ public final class FileUtil {
      * @param targetFile 目标文件
      * @throws IOException 如果文件写入过程中发生错误
      */
-    public static void resourceToFile(Resource resource, File targetFile) throws IOException {
+    public static void resourceToFile(Resource resource, File targetFile) {
         try (InputStream inputStream = resource.getInputStream()) {
             // 确保目标文件的父目录存在
             Path targetPath = targetFile.toPath();
@@ -218,6 +220,9 @@ public final class FileUtil {
             // 使用 Files.copy 方法将 InputStream 内容写入目标文件
             Files.copy(inputStream, targetPath, StandardCopyOption.REPLACE_EXISTING);
             log.info("文件已保存: " + targetFile.getAbsolutePath());
+        }catch (IOException e){
+            log.error("文件转换失败，文件路径：{}", targetFile.getAbsolutePath(), e);
+            throw new RuntimeException("文件转换失败", e);
         }
     }
 

@@ -19,6 +19,7 @@ public class ExecuteCodeResponse {
 
     private List<String> outputList;
 
+    private List<String> outputFilePathList;
     /**
      * 执行信息
      */

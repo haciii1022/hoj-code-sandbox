@@ -61,7 +61,7 @@ public class ProcessUtils {
                 executeMessage.setMessage(compileOutputStringBuilder.toString());
 
                 // 分批获取进程的错误输出
-                BufferedReader errorBufferedReader = new BufferedReader(new InputStreamReader(runProcess.getErrorStream()));
+                BufferedReader errorBufferedReader = new BufferedReader(new InputStreamReader(runProcess.getErrorStream(), "GBK"));
                 StringBuilder errorCompileOutputStringBuilder = new StringBuilder();
 
                 // 逐行读取

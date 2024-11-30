@@ -2,7 +2,6 @@ package com.mirror.hoj.codesandbox;
 
 import cn.hutool.core.date.StopWatch;
 import cn.hutool.core.io.resource.ResourceUtil;
-import cn.hutool.core.util.ArrayUtil;
 import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.async.ResultCallback;
 import com.github.dockerjava.api.command.CreateContainerCmd;
@@ -24,12 +23,14 @@ import com.mirror.hoj.codesandbox.model.ExecuteCodeRequest;
 import com.mirror.hoj.codesandbox.model.ExecuteCodeResponse;
 import com.mirror.hoj.codesandbox.model.ExecuteMessage;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Component;
 
 import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -42,9 +43,9 @@ public class JavaDockerCodeSandbox extends JavaCodeSandboxTemplate {
     private static final boolean FIRST_INIT = false;
     private static long TIME_LIMIT = 5000L; //单位ms
     private static long MEMORY_LIMIT = 5000L; //单位kb
-    private static final long DOCKER_MEMORY_MIN = 6 * 1024 * 1024; // docker容器启动最低需要6M
+    private static final long DOCKER_MEMORY_MIN = 10 * 1024 * 1024; // docker容器启动最低设置10M
     @Override
-    public List<ExecuteMessage> runFile(File userCodeFile, List<String> inputList) {
+    public List<ExecuteMessage> runFile(File userCodeFile, List<String> inputFilePathList) {
         String userCodeParentPath = userCodeFile.getParentFile().getAbsolutePath();
         //创建容器，把文件赋值到容器内
         DockerClient dockerClient = DockerClientBuilder.getInstance().build();
@@ -69,20 +70,15 @@ public class JavaDockerCodeSandbox extends JavaCodeSandboxTemplate {
             }
             log.info("下载完成");
         }
-//      FIRST_INIT = false;
         //创建容器
         CreateContainerCmd containerCmd = dockerClient.createContainerCmd(image);
-        log.info("创建容器：{}", containerCmd);
         //挂载文件
         HostConfig hostConfig = new HostConfig();
         hostConfig.withMemory(Math.max(MEMORY_LIMIT * 1024,DOCKER_MEMORY_MIN));
         hostConfig.withMemorySwap(0L);
         hostConfig.withCpuCount(1L);
         hostConfig.withReadonlyRootfs(true);// 设置只读根文件系统,不能写
-        log.info("hostConfig: {}", hostConfig);
-        log.info("开始读取profile.json");
         String profileConfig = ResourceUtil.readUtf8Str("profile.json");
-//        String profileConfig = ResourceUtil.readUtf8Str("/home/Mirror/hoj-code-sandbox/src/main/resources/profile.json");
         log.info("profileConfig: {}", profileConfig);
         hostConfig.withSecurityOpts(Arrays.asList("seccomp=" + profileConfig));
         hostConfig.setBinds(new Bind(userCodeParentPath, new Volume("/app")));
@@ -99,17 +95,30 @@ public class JavaDockerCodeSandbox extends JavaCodeSandboxTemplate {
         log.info("创建容器：{}", containerId);
         //启动容器
         dockerClient.startContainerCmd(containerId).exec();
-        log.info("启动容器：{}", containerId);
         List<ExecuteMessage> executeMessageList = new ArrayList<>();
         CountDownLatch latch = new CountDownLatch(1);
         final String[] message = {null};
         final String[] errorMessage = {null};
         final long[] maxMemory = {0L};
         final boolean[] timeout = {true};
-        for (String inputArgs : inputList) {
+        for (String inputFilePath : inputFilePathList) {
             ExecuteMessage executeMessage = new ExecuteMessage();
-            String[] inputArgsArray = inputArgs.split(" ");
-            String[] cmdArray = ArrayUtil.append(new String[]{"java", "-cp", "/app", "Main"}, inputArgsArray);
+
+            String localInputFilePath = userCodeParentPath + File.separator + "tmp.in";
+            String inputFileName =  Paths.get(inputFilePath).getFileName().toString();
+            String folderPath = Paths.get(inputFilePath).getParent().toString();
+            String prefix = inputFileName.split("_")[0];
+            String userOutputFilePath = userCodeParentPath + File.separator + prefix + "_3.ans";
+            Resource resource = com.mirror.hoj.codesandbox.utils.FileUtil.downloadFileViaSFTP(inputFilePath);
+            com.mirror.hoj.codesandbox.utils.FileUtil.resourceToFile(resource, new File(localInputFilePath));
+
+//            String[] inputArgsArray = inputArgs.split(" ");
+//            String[] cmdArray = ArrayUtil.append(new String[]{"java", "-cp", "/app", "Main"}, inputArgsArray);
+
+            String[] cmdArray = new String[] {
+                    "sh", "-c",
+                    String.format("java -Dfile.encoding=UTF-8 -cp /app Main < %s > %s", localInputFilePath, userOutputFilePath)
+            };
             ExecCreateCmdResponse execCreateCmdResponse = dockerClient.execCreateCmd(containerId)
                     .withCmd(cmdArray)
                     .withAttachStderr(true)

@@ -1,24 +1,16 @@
 package com.mirror.hoj.codesandbox;
 
-import cn.hutool.core.io.FileUtil;
 import cn.hutool.core.io.resource.ResourceUtil;
-import cn.hutool.core.util.StrUtil;
 import cn.hutool.dfa.WordTree;
 import com.mirror.hoj.codesandbox.model.ExecuteCodeRequest;
 import com.mirror.hoj.codesandbox.model.ExecuteCodeResponse;
-import com.mirror.hoj.codesandbox.model.ExecuteMessage;
-import com.mirror.hoj.codesandbox.model.JudgeInfo;
-import com.mirror.hoj.codesandbox.utils.ProcessUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
-import java.io.File;
-import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
-import java.util.UUID;
 
 /**
  * Java沙箱原生实现，直接复用模板方法
@@ -60,7 +52,8 @@ public class JavaNativeCodeSandbox extends JavaCodeSandboxTemplate {
     public static void main(String[] args) {
         CodeSandbox codeSandbox = new JavaNativeCodeSandbox();
         ExecuteCodeRequest executeCodeRequest = new ExecuteCodeRequest();
-        executeCodeRequest.setInputList(Arrays.asList("1 2", "2 3"));
+        executeCodeRequest.setInputList(Collections.singletonList("1 2"));
+//        executeCodeRequest.setInputList(Arrays.asList("1 2","3 4"));
         executeCodeRequest.setLanguage("java");
         String code = ResourceUtil.readStr("testCode/SimpleComputeArgs/Main.java", StandardCharsets.UTF_8);
         executeCodeRequest.setCode(code);

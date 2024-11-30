@@ -13,6 +13,8 @@ public class ExecuteMessage {
 
     private String message;
 
+    private String outputFilePath;
+
     private String errorMessage;
 
     private Long time;

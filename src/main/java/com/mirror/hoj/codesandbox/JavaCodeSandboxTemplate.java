@@ -10,10 +10,12 @@ import com.mirror.hoj.codesandbox.model.ExecuteMessage;
 import com.mirror.hoj.codesandbox.model.JudgeInfo;
 import com.mirror.hoj.codesandbox.utils.ProcessUtils;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.io.Resource;
 
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -31,6 +33,7 @@ public abstract class JavaCodeSandboxTemplate implements CodeSandbox {
     public ExecuteCodeResponse executeCode(ExecuteCodeRequest executeCodeRequest) {
         log.info("executeCode start");
         List<String> inputList = executeCodeRequest.getInputList();
+        List<String> inputFilePathList = executeCodeRequest.getInputFilePathList();
         String code = executeCodeRequest.getCode();
         String language = executeCodeRequest.getLanguage();
         TIME_OUT = executeCodeRequest.getTimeLimit();
@@ -41,16 +44,17 @@ public abstract class JavaCodeSandboxTemplate implements CodeSandbox {
             ExecuteMessage compileFileExecuteMessage = compileFile(userCodeFile);
             log.info("编译结果：{}", compileFileExecuteMessage);
             //3、依次执行输入用例，获取执行结果列表
-            List<ExecuteMessage> executeMessageList = runFile(userCodeFile, inputList);
+            List<ExecuteMessage> executeMessageList = runFile(userCodeFile, inputFilePathList);
             //4、获取返回相应
             ExecuteCodeResponse executeCodeResponse = getOutPutResponse(executeMessageList);
             //5、清理文件
-            boolean deleted = deleteFile(userCodeFile);
-            if (!deleted) {
-                log.error("deleteFile error, userCodeFilePath = {}", userCodeFile.getAbsolutePath());
-            }
+//            boolean deleted = deleteFile(userCodeFile);
+//            if (!deleted) {
+//                log.error("deleteFile error, userCodeFilePath = {}", userCodeFile.getAbsolutePath());
+//            }
             return executeCodeResponse;
-        }catch (Exception e){
+        }
+        catch (Exception e) {
             log.error("executeCode error", e);
             return getErrorResponse(e);
         }
@@ -98,7 +102,8 @@ public abstract class JavaCodeSandboxTemplate implements CodeSandbox {
             }
             log.info("编译成功");
             return executeMessage;
-        } catch (IOException e) {
+        }
+        catch (IOException e) {
             throw new RuntimeException(JudgeInfoMessageEnum.COMPILE_ERROR.getText());
 //            return getErrorResponse(e);
         }
@@ -108,21 +113,42 @@ public abstract class JavaCodeSandboxTemplate implements CodeSandbox {
      * 3、依次执行输入用例，获取执行结果列表
      *
      * @param userCodeFile
-     * @param inputList
+     * @param inputFilePathList
      * @return
      */
-    public List<ExecuteMessage> runFile(File userCodeFile, List<String> inputList) {
+    public List<ExecuteMessage> runFile(File userCodeFile, List<String> inputFilePathList) {
         String userCodeParentPath = userCodeFile.getParentFile().getAbsolutePath();
         List<ExecuteMessage> executeMessageList = new ArrayList<>();
         //记录一下总耗时
         long totalRunTime = 0L;
         //运行class文件，获取结果
-        for (String input : inputList) {
-            String runCmd = String.format("/www/server/java/jdk1.8.0_371/bin/java -Xmx128m -Dfile.encoding=UTF-8 -cp %s Main %s", userCodeParentPath, input);
+//        String inputFilePath = "/home/ubuntu/hoj/question/1801181035134369793/4_0.in";
+
+
+        String localUserOutputFilePath = userCodeParentPath + File.separator + "tmp.ans";
+        for (String inputFilePath : inputFilePathList) {
+            String localInputFilePath = userCodeParentPath + File.separator + "tmp.in";
+
+            String inputFileName =  Paths.get(inputFilePath).getFileName().toString();
+            String folderPath = Paths.get(inputFilePath).getParent().toString();
+            String prefix = inputFileName.split("_")[0];
+            String userOutputFilePath = userCodeParentPath + File.separator + prefix + "_3.ans";
+
+            Resource resource = com.mirror.hoj.codesandbox.utils.FileUtil.downloadFileViaSFTP(inputFilePath);
+            com.mirror.hoj.codesandbox.utils.FileUtil.resourceToFile(resource, new File(localInputFilePath));
+            ProcessBuilder processBuilder = new ProcessBuilder(
+                    "/www/server/java/jdk1.8.0_371/bin/java", "-Dfile.encoding=UTF-8", "-cp", userCodeParentPath, "Main"
+            );
+            processBuilder.redirectInput(new File(localInputFilePath));
+            processBuilder.redirectOutput(new File(localUserOutputFilePath));
+            processBuilder.redirectError(new File("error.log"));
+//            String runCmd = String.format("/www/server/java/jdk1.8.0_371/bin/java -Xmx128m -Dfile.encoding=UTF-8 -cp %s Main %s", userCodeParentPath, input);
 //            String runCmd = String.format("java -Xmx128m -Dfile.encoding=UTF-8 -cp %s Main %s", userCodeParentPath, input);
 //            String runCmd = String.format("java -Xmx128m -Dfile.encoding=UTF-8 -cp %s%s%s -Djava.security.manager=%s Main %s", userCodeParentPath, File.pathSeparator, SECURITY_MANAGER_PATH, SECURITY_MANAGER_CLASS_NAME, input);
             try {
-                Process runProcess = Runtime.getRuntime().exec(runCmd);
+                // 启动进程
+                Process runProcess = processBuilder.start();
+//                Process runProcess = Runtime.getRuntime().exec(runCmd);
 //                new Thread(() -> {
 //                    try {
 //                        Thread.sleep(TIME_OUT);
@@ -133,13 +159,18 @@ public abstract class JavaCodeSandboxTemplate implements CodeSandbox {
 //                    }
 //
 //                }).start();
+                // 启动线程处理标准输出流和错误流，防止阻塞
                 ExecuteMessage executeMessage = ProcessUtils.runProcessAndGetMessage(runProcess, "运行");
+                log.info("保存用户输出文件：{}", userOutputFilePath);
+                com.mirror.hoj.codesandbox.utils.FileUtil.saveFileViaSFTP( new File(localUserOutputFilePath), userOutputFilePath);
+                executeMessage.setOutputFilePath(userOutputFilePath);
                 log.info("运行结果：{}", executeMessage);
                 long runTime = executeMessage.getTime();
                 totalRunTime += runTime;
                 executeMessageList.add(executeMessage);
-            } catch (IOException e) {
-                throw new RuntimeException("执行错误", e);
+            }
+            catch (Exception e) {
+                throw new RuntimeException("执行错误: " + e.getMessage(), e);
 //                return getErrorResponse(e);
             }
         }
@@ -154,7 +185,9 @@ public abstract class JavaCodeSandboxTemplate implements CodeSandbox {
      */
     public ExecuteCodeResponse getOutPutResponse(List<ExecuteMessage> executeMessageList) {
         ExecuteCodeResponse executeCodeResponse = new ExecuteCodeResponse();
+        executeCodeResponse.setStatus(QuestionSubmitStatusEnum.SUCCEED.getValue());
         List<String> outputList = new ArrayList<>();
+        List<String> outputFilePathList = new ArrayList<>();
         List<JudgeInfo> judgeInfoList = new ArrayList<>();
         long totalRunTime = 0L;
         long maxMemory = 0L;
@@ -166,23 +199,25 @@ public abstract class JavaCodeSandboxTemplate implements CodeSandbox {
             maxMemory = Math.max(maxMemory, executeMessage.getMemory());
             judgeInfoList.add(judgeInfo);
             outputList.add(executeMessage.getMessage());
+            outputFilePathList.add(executeMessage.getOutputFilePath());
             //碰到错误就直接返回
             if (StrUtil.isNotBlank(executeMessage.getErrorMessage())) {
                 executeCodeResponse.setStatus(QuestionSubmitStatusEnum.FAILED.getValue());
                 executeCodeResponse.setMessage(executeMessage.getErrorMessage());
-                break;
+//                break;
             }
         }
         executeCodeResponse.setOutputList(outputList);
+        executeCodeResponse.setOutputFilePathList(outputFilePathList);
         JudgeInfo totalJudgeInfo = new JudgeInfo();
-        //正常运行执行所有用例
-        if (outputList.size() == executeMessageList.size()) {
-            executeCodeResponse.setStatus(QuestionSubmitStatusEnum.SUCCEED.getValue());
-        }
+//        //正常运行执行所有用例
+//        if (outputList.size() == executeMessageList.size()) {
+//            executeCodeResponse.setStatus(QuestionSubmitStatusEnum.SUCCEED.getValue());
+//        }
         totalJudgeInfo.setTime(totalRunTime / executeMessageList.size());
         totalJudgeInfo.setMemory(maxMemory);
         executeCodeResponse.setJudgeInfoList(judgeInfoList);
-        log.info("获取输出响应: {}",executeCodeResponse);
+        log.info("获取输出响应: {}", executeCodeResponse);
         return executeCodeResponse;
     }
 
