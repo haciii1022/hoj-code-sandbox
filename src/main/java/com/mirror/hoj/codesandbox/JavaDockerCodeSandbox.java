@@ -110,7 +110,9 @@ public class JavaDockerCodeSandbox extends JavaCodeSandboxTemplate {
             String inputFileName = Paths.get(inputFilePath).getFileName().toString();
             String folderPath = Paths.get(inputFilePath).getParent().toString();
             String prefix = inputFileName.split("_")[0];
-            String userOutputFilePath = userCodeParentPath + File.separator + prefix + "_3.ans";
+            String userOutputFilePath = FileUtil.ROOT_PATH
+                    + File.separator +FileUtil.QUESTION_SUBMIT_PREFIX
+                    + File.separator + prefix + "_3.ans";
             Resource resource = com.mirror.hoj.codesandbox.utils.FileUtil.downloadFileViaSFTP(inputFilePath);
             com.mirror.hoj.codesandbox.utils.FileUtil.resourceToFile(resource, localInputFile);
             String[] cmdArray = new String[]{

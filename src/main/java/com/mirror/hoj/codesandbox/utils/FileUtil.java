@@ -43,6 +43,10 @@ public final class FileUtil {
 
     private static final int PERMISSIONS_755 = 0755;
 
+    public static final String ROOT_PATH = "/home/ubuntu";
+
+    public static final String QUESTION_SUBMIT_PREFIX = "hoj/questionSubmit";
+
     static {
         sftpClient = SpringUtil.getBean(SftpClient.class);
     }
