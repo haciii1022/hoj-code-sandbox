@@ -42,6 +42,7 @@ public abstract class JavaCodeSandboxTemplate implements CodeSandbox {
         List<String> inputFilePathList = executeCodeRequest.getInputFilePathList();
         String code = executeCodeRequest.getCode();
         String language = executeCodeRequest.getLanguage();
+        String identifier = executeCodeRequest.getIdentifier();
         TIME_OUT = executeCodeRequest.getTimeLimit();
         try {
             //1、把用户代码保存为文件
@@ -50,7 +51,7 @@ public abstract class JavaCodeSandboxTemplate implements CodeSandbox {
             ExecuteMessage compileFileExecuteMessage = compileFile(userCodeFile);
             log.info("编译结果：{}", compileFileExecuteMessage);
             //3、依次执行输入用例，获取执行结果列表
-            List<ExecuteMessage> executeMessageList = runFile(userCodeFile, inputFilePathList);
+            List<ExecuteMessage> executeMessageList = runFile(userCodeFile, inputFilePathList, identifier);
             //4、获取返回相应
             ExecuteCodeResponse executeCodeResponse = getOutPutResponse(executeMessageList);
             //5、清理文件
@@ -120,7 +121,7 @@ public abstract class JavaCodeSandboxTemplate implements CodeSandbox {
      * @param inputFilePathList
      * @return
      */
-    public List<ExecuteMessage> runFile(File userCodeFile, List<String> inputFilePathList) {
+    public List<ExecuteMessage> runFile(File userCodeFile, List<String> inputFilePathList,String identifier) {
         String userCodeParentPath = userCodeFile.getParentFile().getAbsolutePath();
         List<ExecuteMessage> executeMessageList = new ArrayList<>();
         //记录一下总耗时

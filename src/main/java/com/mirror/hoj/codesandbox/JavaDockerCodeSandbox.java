@@ -33,6 +33,7 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
@@ -45,7 +46,7 @@ public class JavaDockerCodeSandbox extends JavaCodeSandboxTemplate {
     private static final long DOCKER_MEMORY_MIN = 10 * 1024 * 1024; // docker容器启动最低设置10M
 
     @Override
-    public List<ExecuteMessage> runFile(File userCodeFile, List<String> inputFilePathList) {
+    public List<ExecuteMessage> runFile(File userCodeFile, List<String> inputFilePathList,String identifier) {
         String userCodeParentPath = userCodeFile.getParentFile().getAbsolutePath();
         //创建容器，把文件赋值到容器内
         DockerClient dockerClient = DockerClientBuilder.getInstance().build();
@@ -111,7 +112,8 @@ public class JavaDockerCodeSandbox extends JavaCodeSandboxTemplate {
             String folderPath = Paths.get(inputFilePath).getParent().toString();
             String prefix = inputFileName.split("_")[0];
             String userOutputFilePath = FileUtil.ROOT_PATH
-                    + File.separator +FileUtil.QUESTION_SUBMIT_PREFIX
+                    + File.separator + FileUtil.QUESTION_SUBMIT_PREFIX
+                    + File.separator + Optional.ofNullable(identifier).orElse("default")
                     + File.separator + prefix + "_3.ans";
             Resource resource = com.mirror.hoj.codesandbox.utils.FileUtil.downloadFileViaSFTP(inputFilePath);
             com.mirror.hoj.codesandbox.utils.FileUtil.resourceToFile(resource, localInputFile);
