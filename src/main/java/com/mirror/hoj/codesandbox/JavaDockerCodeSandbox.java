@@ -22,13 +22,12 @@ import com.github.dockerjava.core.command.ExecStartResultCallback;
 import com.mirror.hoj.codesandbox.model.ExecuteCodeRequest;
 import com.mirror.hoj.codesandbox.model.ExecuteCodeResponse;
 import com.mirror.hoj.codesandbox.model.ExecuteMessage;
+import com.mirror.hoj.codesandbox.utils.FileUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Component;
 
-import java.io.Closeable;
-import java.io.File;
-import java.io.IOException;
+import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -44,6 +43,7 @@ public class JavaDockerCodeSandbox extends JavaCodeSandboxTemplate {
     private static long TIME_LIMIT = 5000L; //单位ms
     private static long MEMORY_LIMIT = 5000L; //单位kb
     private static final long DOCKER_MEMORY_MIN = 10 * 1024 * 1024; // docker容器启动最低设置10M
+
     @Override
     public List<ExecuteMessage> runFile(File userCodeFile, List<String> inputFilePathList) {
         String userCodeParentPath = userCodeFile.getParentFile().getAbsolutePath();
@@ -56,7 +56,7 @@ public class JavaDockerCodeSandbox extends JavaCodeSandboxTemplate {
             PullImageResultCallback pullImageResultCallback = new PullImageResultCallback() {
                 @Override
                 public void onNext(PullResponseItem item) {
-                   log.info("下载镜像：{}", item.getStatus());
+                    log.info("下载镜像：{}", item.getStatus());
                     super.onNext(item);
                 }
             };
@@ -74,7 +74,7 @@ public class JavaDockerCodeSandbox extends JavaCodeSandboxTemplate {
         CreateContainerCmd containerCmd = dockerClient.createContainerCmd(image);
         //挂载文件
         HostConfig hostConfig = new HostConfig();
-        hostConfig.withMemory(Math.max(MEMORY_LIMIT * 1024,DOCKER_MEMORY_MIN));
+        hostConfig.withMemory(Math.max(MEMORY_LIMIT * 1024, DOCKER_MEMORY_MIN));
         hostConfig.withMemorySwap(0L);
         hostConfig.withCpuCount(1L);
         hostConfig.withReadonlyRootfs(true);// 设置只读根文件系统,不能写
@@ -101,23 +101,21 @@ public class JavaDockerCodeSandbox extends JavaCodeSandboxTemplate {
         final String[] errorMessage = {null};
         final long[] maxMemory = {0L};
         final boolean[] timeout = {true};
+        String localUserOutputFilePath = userCodeParentPath + File.separator + "tmp.ans";
+        String localInputFilePath = userCodeParentPath + File.separator + "tmp.in";
+        File localInputFile = createFileWithPermissions(localInputFilePath);
+        File localUserOutputFile = createFileWithPermissions(localUserOutputFilePath);
         for (String inputFilePath : inputFilePathList) {
             ExecuteMessage executeMessage = new ExecuteMessage();
-
-            String localInputFilePath = userCodeParentPath + File.separator + "tmp.in";
-            String inputFileName =  Paths.get(inputFilePath).getFileName().toString();
+            String inputFileName = Paths.get(inputFilePath).getFileName().toString();
             String folderPath = Paths.get(inputFilePath).getParent().toString();
             String prefix = inputFileName.split("_")[0];
             String userOutputFilePath = userCodeParentPath + File.separator + prefix + "_3.ans";
             Resource resource = com.mirror.hoj.codesandbox.utils.FileUtil.downloadFileViaSFTP(inputFilePath);
-            com.mirror.hoj.codesandbox.utils.FileUtil.resourceToFile(resource, new File(localInputFilePath));
-
-//            String[] inputArgsArray = inputArgs.split(" ");
-//            String[] cmdArray = ArrayUtil.append(new String[]{"java", "-cp", "/app", "Main"}, inputArgsArray);
-
-            String[] cmdArray = new String[] {
+            com.mirror.hoj.codesandbox.utils.FileUtil.resourceToFile(resource, localInputFile);
+            String[] cmdArray = new String[]{
                     "sh", "-c",
-                    String.format("java -Dfile.encoding=UTF-8 -cp /app Main < %s > %s", localInputFilePath, userOutputFilePath)
+                    "java -cp /app Main arg1 arg2 < /app/tmp.in > /app/tmp.ans 2>/app/tmp.err"
             };
             ExecCreateCmdResponse execCreateCmdResponse = dockerClient.execCreateCmd(containerId)
                     .withCmd(cmdArray)
@@ -140,6 +138,7 @@ public class JavaDockerCodeSandbox extends JavaCodeSandboxTemplate {
                     }
                     super.onNext(frame);
                 }
+
                 @Override
                 public void onComplete() {
                     timeout[0] = false;
@@ -186,6 +185,8 @@ public class JavaDockerCodeSandbox extends JavaCodeSandboxTemplate {
                         .awaitCompletion(TIME_LIMIT, TimeUnit.MILLISECONDS);
                 stopWatch.stop();
                 statsCmd.close();
+                FileUtil.saveFileViaSFTP(localUserOutputFile, userOutputFilePath);
+                // 使用系统命令将文件从容器复制到宿主机
             } catch (InterruptedException e) {
                 log.error("程序执行异常");
                 throw new RuntimeException(e);
@@ -208,6 +209,7 @@ public class JavaDockerCodeSandbox extends JavaCodeSandboxTemplate {
             new Thread(() -> {
                 try {
                     Thread.sleep(5000);
+
                     dockerClient.stopContainerCmd(containerId).exec();
                     dockerClient.removeContainerCmd(containerId).exec();
                     log.info("删除容器：{}", containerId);
@@ -217,7 +219,7 @@ public class JavaDockerCodeSandbox extends JavaCodeSandboxTemplate {
                 }
             }).start();
         }
-        log.info("执行输入用例，获取执行结果列表出参: {}",executeMessageList);
+        log.info("执行输入用例，获取执行结果列表出参: {}", executeMessageList);
         return executeMessageList;
     }
 
@@ -234,7 +236,7 @@ public class JavaDockerCodeSandbox extends JavaCodeSandboxTemplate {
         executeCodeRequest.setInputList(Arrays.asList("1 2", "2 3"));
         executeCodeRequest.setLanguage("java");
         executeCodeRequest.setTimeLimit(1000L);
-        executeCodeRequest.setMemoryLimit(1000L*128);
+        executeCodeRequest.setMemoryLimit(1000L * 128);
         String code = ResourceUtil.readStr("testCode/SimpleComputeArgs/Main.java", StandardCharsets.UTF_8);
         executeCodeRequest.setCode(code);
         codeSandbox.executeCode(executeCodeRequest);

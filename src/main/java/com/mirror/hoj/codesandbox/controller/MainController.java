@@ -63,7 +63,9 @@ public class MainController {
             throw new RuntimeException("请求参数为空");
         }
         return javaDockerCodeSandbox.executeCode(executeCodeRequest);
+//        return javaNativeCodeSandbox.executeCode(executeCodeRequest);
     }
+
     @GetMapping("/test")
     public Boolean test(HttpServletRequest request) {
         CodeSandbox codeSandbox = new JavaNativeCodeSandbox();

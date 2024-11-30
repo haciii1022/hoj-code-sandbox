@@ -16,6 +16,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -33,11 +34,14 @@ import java.nio.file.StandardCopyOption;
 @Slf4j
 public final class FileUtil {
 
-    private FileUtil(){}
+    private FileUtil() {
+    }
 
     private static ChannelSftp channelSftp;
 
     private static final SftpClient sftpClient;
+
+    private static final int PERMISSIONS_755 = 0755;
 
     static {
         sftpClient = SpringUtil.getBean(SftpClient.class);
@@ -49,33 +53,35 @@ public final class FileUtil {
      * @param originalFile 需要上传的文件
      * @param fullFilePath 远程服务器上文件保存的完整路径
      */
-    public static void saveFileViaSFTP(MultipartFile originalFile, String fullFilePath) throws Exception {
+    public static void saveFileViaSFTP(MultipartFile originalFile, String fullFilePath) {
         channelSftp = sftpClient.getChannelSftp();
         // 获取文件所在的目录
         String folderPath = Paths.get(fullFilePath).getParent().toString();
-        log.info("folderPath:{}",folderPath);
+        log.info("folderPath:{}", folderPath);
         ensureDirectoryExists(folderPath);
         try (InputStream inputStream = originalFile.getInputStream()) {
             // 上传文件到远程服务器的指定路径
             log.info("保存文件：{}", fullFilePath);
             channelSftp.put(inputStream, fullFilePath);
-        }catch (Exception e){
-            log.error("保存文件失败,上传路径：{}",fullFilePath,e);
+            setFilePermissions(fullFilePath, PERMISSIONS_755);
+        } catch (Exception e) {
+            log.error("保存文件失败,上传路径：{}", fullFilePath, e);
         }
     }
 
-    public static void saveFileViaSFTP(File originalFile, String fullFilePath) throws Exception {
+    public static void saveFileViaSFTP(File originalFile, String fullFilePath) {
         channelSftp = sftpClient.getChannelSftp();
         // 获取文件所在的目录
         String folderPath = Paths.get(fullFilePath).getParent().toString();
-        log.info("folderPath:{}",folderPath);
+        log.info("folderPath:{}", folderPath);
         ensureDirectoryExists(folderPath);
         try (InputStream inputStream = Files.newInputStream(originalFile.toPath())) {
             // 上传文件到远程服务器的指定路径
             log.info("保存文件：{}", fullFilePath);
             channelSftp.put(inputStream, fullFilePath);
-        }catch (Exception e){
-            log.error("保存文件失败,上传路径：{}",fullFilePath,e);
+            setFilePermissions(fullFilePath, PERMISSIONS_755); // 设置文件权限为 755
+        } catch (Exception e) {
+            log.error("保存文件失败,上传路径：{}", fullFilePath, e);
         }
     }
 
@@ -108,7 +114,7 @@ public final class FileUtil {
      * 通过 SFTP 下载文件并返回 ResponseEntity<byte[]> 以供浏览器下载
      *
      * @param remoteFilePath 远程文件的完整路径
-     * @return ResponseEntity<byte[]> 包含文件的字节流
+     * @return ResponseEntity<byte [ ]> 包含文件的字节流
      */
     public static Resource downloadFileViaSFTP(String remoteFilePath) {
         channelSftp = sftpClient.getChannelSftp();
@@ -125,11 +131,12 @@ public final class FileUtil {
         // 使用 InputStreamResource 将文件流包装成 Resource 对象
         return new InputStreamResource(inputStream);
     }
+
     /**
      * 确保远程服务器的目录存在
      * 如果目录不存在，则逐级创建
      */
-    private static void ensureDirectoryExists(String remoteDir) throws SftpException {
+    private static void ensureDirectoryExists(String remoteDir) {
         channelSftp = sftpClient.getChannelSftp();
         String[] folders = remoteDir.split("/");
         StringBuilder pathBuilder = new StringBuilder("/");
@@ -140,7 +147,14 @@ public final class FileUtil {
             String currentPath = pathBuilder.toString();
 
             if (!isDirectoryExist(currentPath)) {
-                channelSftp.mkdir(currentPath); // 创建目录
+                try {
+                    channelSftp.mkdir(currentPath); // 创建目录
+                    setFilePermissions(currentPath, PERMISSIONS_755);
+                } catch (SftpException e) {
+                    log.error("文件路径创建失败：{}", currentPath, e);
+//                    throw new RuntimeException("文件路径创建失败：" + currentPath, e);
+                }
+
             }
         }
     }
@@ -202,12 +216,13 @@ public final class FileUtil {
         String fileContent = outputStream.toString("UTF-8").replaceFirst("(\\r?\\n)+$", "");
 
         // 将处理后的字符串转换回字节数组
-        return fileContent.getBytes("UTF-8");
+        return fileContent.getBytes(StandardCharsets.UTF_8);
     }
+
     /**
      * 将 Resource 转换为 File 并保存
      *
-     * @param resource Spring Resource 对象
+     * @param resource   Spring Resource 对象
      * @param targetFile 目标文件
      * @throws IOException 如果文件写入过程中发生错误
      */
@@ -215,15 +230,29 @@ public final class FileUtil {
         try (InputStream inputStream = resource.getInputStream()) {
             // 确保目标文件的父目录存在
             Path targetPath = targetFile.toPath();
+            log.info("targetPath: {}", targetPath);
             Files.createDirectories(targetPath.getParent());
 
             // 使用 Files.copy 方法将 InputStream 内容写入目标文件
             Files.copy(inputStream, targetPath, StandardCopyOption.REPLACE_EXISTING);
+            setFilePermissions(targetFile.getAbsolutePath(), PERMISSIONS_755);
             log.info("文件已保存: " + targetFile.getAbsolutePath());
-        }catch (IOException e){
+
+        } catch (IOException | SftpException e) {
             log.error("文件转换失败，文件路径：{}", targetFile.getAbsolutePath(), e);
             throw new RuntimeException("文件转换失败", e);
         }
     }
 
+    /**
+     * 设置远程文件或目录的权限
+     *
+     * @param remotePath  远程文件或目录的路径
+     * @param permissions 文件权限（例如：0755）
+     */
+    private static void setFilePermissions(String remotePath, int permissions) throws SftpException {
+        String chmodCommand = "chmod " + String.format("%04o", permissions) + " " + remotePath;
+        channelSftp.chmod(permissions, remotePath);
+        log.info("设置权限 {} 给文件 {}", String.format("%04o", permissions), remotePath);
+    }
 }

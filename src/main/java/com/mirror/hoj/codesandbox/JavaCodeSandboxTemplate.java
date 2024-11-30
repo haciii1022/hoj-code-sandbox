@@ -15,9 +15,13 @@ import org.springframework.core.io.Resource;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.nio.file.attribute.PosixFilePermission;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 @Slf4j
@@ -28,6 +32,8 @@ public abstract class JavaCodeSandboxTemplate implements CodeSandbox {
 
     private static long TIME_OUT = 5000L;
 
+    // 定义文件权限 755
+    private static final Set<PosixFilePermission> PERMISSIONS_755 = PosixFilePermissions.fromString("rwxr-xr-x");
 
     @Override
     public ExecuteCodeResponse executeCode(ExecuteCodeRequest executeCodeRequest) {
@@ -53,8 +59,7 @@ public abstract class JavaCodeSandboxTemplate implements CodeSandbox {
 //                log.error("deleteFile error, userCodeFilePath = {}", userCodeFile.getAbsolutePath());
 //            }
             return executeCodeResponse;
-        }
-        catch (Exception e) {
+        } catch (Exception e) {
             log.error("executeCode error", e);
             return getErrorResponse(e);
         }
@@ -102,8 +107,7 @@ public abstract class JavaCodeSandboxTemplate implements CodeSandbox {
             }
             log.info("编译成功");
             return executeMessage;
-        }
-        catch (IOException e) {
+        } catch (IOException e) {
             throw new RuntimeException(JudgeInfoMessageEnum.COMPILE_ERROR.getText());
 //            return getErrorResponse(e);
         }
@@ -126,22 +130,26 @@ public abstract class JavaCodeSandboxTemplate implements CodeSandbox {
 
 
         String localUserOutputFilePath = userCodeParentPath + File.separator + "tmp.ans";
-        for (String inputFilePath : inputFilePathList) {
-            String localInputFilePath = userCodeParentPath + File.separator + "tmp.in";
+        String localInputFilePath = userCodeParentPath + File.separator + "tmp.in";
 
-            String inputFileName =  Paths.get(inputFilePath).getFileName().toString();
+        File localInputFile = createFileWithPermissions(localInputFilePath);
+        File localUserOutputFile = createFileWithPermissions(localUserOutputFilePath);
+        File localErrorFile = createFileWithPermissions("error.log");
+
+        for (String inputFilePath : inputFilePathList) {
+            String inputFileName = Paths.get(inputFilePath).getFileName().toString();
             String folderPath = Paths.get(inputFilePath).getParent().toString();
             String prefix = inputFileName.split("_")[0];
             String userOutputFilePath = userCodeParentPath + File.separator + prefix + "_3.ans";
 
             Resource resource = com.mirror.hoj.codesandbox.utils.FileUtil.downloadFileViaSFTP(inputFilePath);
-            com.mirror.hoj.codesandbox.utils.FileUtil.resourceToFile(resource, new File(localInputFilePath));
+            com.mirror.hoj.codesandbox.utils.FileUtil.resourceToFile(resource, localInputFile);
             ProcessBuilder processBuilder = new ProcessBuilder(
                     "/www/server/java/jdk1.8.0_371/bin/java", "-Dfile.encoding=UTF-8", "-cp", userCodeParentPath, "Main"
             );
-            processBuilder.redirectInput(new File(localInputFilePath));
-            processBuilder.redirectOutput(new File(localUserOutputFilePath));
-            processBuilder.redirectError(new File("error.log"));
+            processBuilder.redirectInput(localInputFile);
+            processBuilder.redirectOutput(localUserOutputFile);
+            processBuilder.redirectError(localErrorFile);
 //            String runCmd = String.format("/www/server/java/jdk1.8.0_371/bin/java -Xmx128m -Dfile.encoding=UTF-8 -cp %s Main %s", userCodeParentPath, input);
 //            String runCmd = String.format("java -Xmx128m -Dfile.encoding=UTF-8 -cp %s Main %s", userCodeParentPath, input);
 //            String runCmd = String.format("java -Xmx128m -Dfile.encoding=UTF-8 -cp %s%s%s -Djava.security.manager=%s Main %s", userCodeParentPath, File.pathSeparator, SECURITY_MANAGER_PATH, SECURITY_MANAGER_CLASS_NAME, input);
@@ -162,14 +170,13 @@ public abstract class JavaCodeSandboxTemplate implements CodeSandbox {
                 // 启动线程处理标准输出流和错误流，防止阻塞
                 ExecuteMessage executeMessage = ProcessUtils.runProcessAndGetMessage(runProcess, "运行");
                 log.info("保存用户输出文件：{}", userOutputFilePath);
-                com.mirror.hoj.codesandbox.utils.FileUtil.saveFileViaSFTP( new File(localUserOutputFilePath), userOutputFilePath);
+                com.mirror.hoj.codesandbox.utils.FileUtil.saveFileViaSFTP(createFileWithPermissions(localUserOutputFilePath), userOutputFilePath);
                 executeMessage.setOutputFilePath(userOutputFilePath);
                 log.info("运行结果：{}", executeMessage);
                 long runTime = executeMessage.getTime();
                 totalRunTime += runTime;
                 executeMessageList.add(executeMessage);
-            }
-            catch (Exception e) {
+            } catch (Exception e) {
                 throw new RuntimeException("执行错误: " + e.getMessage(), e);
 //                return getErrorResponse(e);
             }
@@ -251,5 +258,22 @@ public abstract class JavaCodeSandboxTemplate implements CodeSandbox {
         // 表示代码沙箱错误
         executeCodeResponse.setStatus(QuestionSubmitStatusEnum.FAILED.getValue());
         return executeCodeResponse;
+    }
+
+    // 自定义方法来创建文件并设置权限为 755
+    protected File createFileWithPermissions(String path) {
+        File file = new File(path);
+        try {
+            // 如果文件不存在，则创建文件
+            if (!file.exists()) {
+                file.createNewFile();
+                Files.setPosixFilePermissions(Paths.get(path), PERMISSIONS_755);
+                log.info("文件路径为 {} 的文件权限已成功设置为 rwxr-xr-x", path);
+            }
+        } catch (IOException e) {
+            log.error("创建文件失败: {}", e.getMessage(), e);
+            throw new RuntimeException("创建文件失败：" + e.getMessage());
+        }
+        return file;
     }
 }
