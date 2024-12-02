@@ -210,8 +210,9 @@ public abstract class JavaCodeSandboxTemplate implements CodeSandbox {
             outputFilePathList.add(executeMessage.getOutputFilePath());
             //碰到错误就直接返回
             if (StrUtil.isNotBlank(executeMessage.getErrorMessage())) {
-                executeCodeResponse.setStatus(QuestionSubmitStatusEnum.FAILED.getValue());
-                executeCodeResponse.setMessage(executeMessage.getErrorMessage());
+                executeCodeResponse.setStatus(QuestionSubmitStatusEnum.SUCCEED.getValue());
+//                executeCodeResponse.setMessage(executeMessage.getErrorMessage());
+                judgeInfo.setMessage(executeMessage.getErrorMessage());
 //                break;
             }
         }
