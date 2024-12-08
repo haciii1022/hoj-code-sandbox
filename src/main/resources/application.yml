@@ -5,3 +5,6 @@ sftp:
   port: 22
   username: root
   password: fjnuacm102
+socket:
+  remoteHost: 192.168.1.210
+  port: 8091
