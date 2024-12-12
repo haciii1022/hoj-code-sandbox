@@ -36,23 +36,26 @@ public class CppSocketClient {
     @Resource
     private CppSandboxExeManager exeManager;
 
+    private volatile boolean isHealthCheckRunning = true; // 标志位
 
     @PostConstruct
     public void init() throws InterruptedException {
+        // 添加启动事件监听器
+        exeManager.addStartListener(() -> {
+            try {
+                log.info("exe 进程启动成功，初始化 Socket 池...");
+                socketPool = new ArrayBlockingQueue<>(poolSize);
+                for (int i = 0; i < poolSize; i++) {
+                    socketPool.offer(createSocket());
+                }
+                log.info("Socket 池初始化完成，大小：{}", poolSize);
+            } catch (IOException e) {
+                log.error("初始化 Socket 池失败", e);
+                throw new RuntimeException("初始化 Socket 池失败", e);
+            }
+        });
         // 启动 .exe 进程
         exeManager.startExe();
-        //TODO 得等待exe进程成功启动，后续可以尝试换个写法
-        Thread.sleep(2000);
-        socketPool = new ArrayBlockingQueue<>(poolSize);
-        try {
-            for (int i = 0; i < poolSize; i++) {
-                socketPool.offer(createSocket());
-            }
-            log.info("Socket 池初始化完成，大小：{}", poolSize);
-        } catch (IOException e) {
-            log.error("初始化 Socket 池失败", e);
-            throw new RuntimeException("初始化 Socket 池失败", e);
-        }
         // 启动一个定时检查任务来验证 exe 进程是否存活
         startExeHealthCheck();
     }
@@ -61,7 +64,7 @@ public class CppSocketClient {
      */
     private Socket createSocket() throws IOException {
         Socket socket = new Socket(remoteHost, port);
-        log.info("创建新的 Socket 连接: {}:{}", remoteHost, port);
+//        log.info("创建新的 Socket 连接: {}:{}", remoteHost, port);
         return socket;
     }
 
@@ -152,10 +155,11 @@ public class CppSocketClient {
      */
     private void startExeHealthCheck() {
         new Thread(() -> {
-            while (true) {
+            while (isHealthCheckRunning) {
+                log.info("开始检查");
                 try {
                     Thread.sleep(60000);  // 每分钟检查一次
-                    if (!exeManager.isExeProcessAlive()) {
+                    if (isHealthCheckRunning &&!exeManager.isExeProcessAlive()) {
                         log.warn("C++沙箱程序进程已停止，尝试重启...");
                         exeManager.startExe();  // 如果进程已经退出，重新启动
                     }
@@ -168,6 +172,9 @@ public class CppSocketClient {
 
     @PreDestroy
     public void shutdown() {
+        log.info("关闭健康检查线程...");
+        isHealthCheckRunning = false; // 停止健康检查线程
+
         log.info("关闭 Socket 池...");
         while (!socketPool.isEmpty()) {
             Socket socket = socketPool.poll();

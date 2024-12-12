@@ -8,3 +8,5 @@ sftp:
 socket:
   remoteHost: 192.168.1.210
   port: 8091
+  poolSize: 10
+  poolSize: 10
