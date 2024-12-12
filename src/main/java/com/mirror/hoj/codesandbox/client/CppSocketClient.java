@@ -2,17 +2,20 @@ package com.mirror.hoj.codesandbox.client;
 
 import cn.hutool.json.JSONUtil;
 import com.mirror.hoj.codesandbox.model.ExecuteCodeRequest;
+import com.mirror.hoj.codesandbox.model.ExecuteCodeResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import javax.annotation.PostConstruct;
 import javax.annotation.PreDestroy;
 import java.io.*;
 import java.net.Socket;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
 
 /**
- * CppSocket 客户端
- * 负责管理 Cpp代码沙箱的Socket 的连接、重连和断开。
+ * CppSocket 客户端 - 使用 Socket 池化管理
  */
 @Slf4j
 @Component
@@ -24,76 +27,81 @@ public class CppSocketClient {
     @Value("${socket.port}")
     private int port;
 
-    private Socket socket;
-    private PrintWriter out;
-    private BufferedReader in;
+    @Value("${socket.poolSize:10}")
+    private int poolSize; // 默认池大小为10
+
+    private BlockingQueue<Socket> socketPool;
+
+    @PostConstruct
+    public void init() {
+        socketPool = new ArrayBlockingQueue<>(poolSize);
+        try {
+            for (int i = 0; i < poolSize; i++) {
+                socketPool.offer(createSocket());
+            }
+            log.info("Socket 池初始化完成，大小：{}", poolSize);
+        } catch (IOException e) {
+            log.error("初始化 Socket 池失败", e);
+            throw new RuntimeException("初始化 Socket 池失败", e);
+        }
+    }
 
     /**
-     * 获取可用的 Socket 连接。
-     *
-     * @return 已连接的 Socket 实例
+     * 创建一个新的 Socket 连接。
      */
-    public Socket getSocket() {
-        ensureConnected(); // 每次调用时确保 Socket 已连接
+    private Socket createSocket() throws IOException {
+        Socket socket = new Socket(remoteHost, port);
+        log.info("创建新的 Socket 连接: {}:{}", remoteHost, port);
         return socket;
     }
 
-    private synchronized Boolean sendPing(){
-        try {
-            out.println(JSONUtil.toJsonStr("ping"));
-            String response = in.readLine();
-            if(!"pong".equals(response)){
-                return false;
-            }
-        } catch (IOException e) {
-            return false;
-        }
-        return true;
-    }
-
     /**
-     * 确保 Socket 已连接。
+     * 借用一个 Socket 连接。
      */
-    private synchronized void ensureConnected() {
+    private Socket borrowSocket() throws IOException {
         try {
-            // 服务端主动断开连接的话，这里不会感知到，还需要加一个心跳机制
-            if (socket == null || socket.isClosed() || !socket.isConnected() || !sendPing()) {
-                connectSocket();
+            Socket socket = socketPool.poll();
+            if (socket == null || socket.isClosed() || !socket.isConnected() || !sendPing(socket)) {
+                log.info("Socket 不可用，创建新连接");
+                return createSocket();
             }
+            return socket;
         } catch (Exception e) {
-            log.error("Socket 连接失败", e);
-            throw new RuntimeException("Socket 连接失败", e);
+            log.error("借用 Socket 失败", e);
+            throw new IOException("借用 Socket 失败", e);
         }
     }
 
     /**
-     * 建立新的 Socket 连接，并初始化流。
+     * 归还一个 Socket 连接。
      */
-    private void connectSocket() throws IOException {
-        if (socket != null && !socket.isClosed()) {
-            socket.close();
+    private void returnSocket(Socket socket) {
+        if (socket == null || socket.isClosed() || !socket.isConnected()) {
+            log.warn("归还的 Socket 无效，直接丢弃");
+            return;
         }
-        socket = new Socket(remoteHost, port);
-
-        // 初始化输出和输入流
-        out = new PrintWriter(socket.getOutputStream(), true);
-        in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-
-        log.info("Socket 已连接到 {}:{}", remoteHost, port);
-    }
-
-    /**
-     * 断开 Socket 连接。
-     */
-    @PreDestroy
-    public synchronized void disconnect() {
-        if (socket != null && !socket.isClosed()) {
+        if (!socketPool.offer(socket)) {
+            log.warn("Socket 池已满，关闭多余的连接");
             try {
                 socket.close();
-                log.info("Socket 已断开");
             } catch (IOException e) {
-                log.warn("断开 Socket 时发生异常", e);
+                log.error("关闭多余 Socket 失败", e);
             }
+        }
+    }
+
+    /**
+     * 发送 Ping 检查 Socket 是否可用。
+     */
+    private boolean sendPing(Socket socket) {
+        try {
+            PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
+            BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+            out.println("ping");
+            String response = in.readLine();
+            return "pong".equals(response);
+        } catch (IOException e) {
+            return false;
         }
     }
 
@@ -103,23 +111,46 @@ public class CppSocketClient {
      * @param executeCodeRequest 执行代码的请求对象
      * @return 沙箱服务器返回的结果
      */
-    public synchronized String executeCode(ExecuteCodeRequest executeCodeRequest) {
-        ensureConnected();
+    public ExecuteCodeResponse executeCode(ExecuteCodeRequest executeCodeRequest) {
+        Socket socket = null;
         try {
+            socket = borrowSocket();
+
+            PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
+            BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+
             // 发送请求
             out.println(JSONUtil.toJsonStr(executeCodeRequest));
 
             // 读取响应
             String response = in.readLine();
             if (response == null) {
-                log.warn("服务器连接已断开");
                 throw new IOException("服务器连接已断开");
             }
-            return response;
+            return JSONUtil.toBean(response, ExecuteCodeResponse.class);
         } catch (IOException e) {
-            log.error("Socket 通信异常", e);
+            log.error("执行代码时发生 Socket 通信异常", e);
             throw new RuntimeException("Socket 通信异常", e);
+        } finally {
+            if (socket != null) {
+                returnSocket(socket);
+            }
         }
     }
 
+    @PreDestroy
+    public void shutdown() {
+        log.info("关闭 Socket 池...");
+        while (!socketPool.isEmpty()) {
+            Socket socket = socketPool.poll();
+            if (socket != null) {
+                try {
+                    socket.close();
+                } catch (IOException e) {
+                    log.warn("关闭 Socket 失败", e);
+                }
+            }
+        }
+        log.info("Socket 池已关闭");
+    }
 }
