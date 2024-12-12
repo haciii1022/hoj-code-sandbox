@@ -1,6 +1,7 @@
 package com.mirror.hoj.codesandbox.client;
 
 import cn.hutool.json.JSONUtil;
+import com.mirror.hoj.codesandbox.manager.CppSandboxExeManager;
 import com.mirror.hoj.codesandbox.model.ExecuteCodeRequest;
 import com.mirror.hoj.codesandbox.model.ExecuteCodeResponse;
 import lombok.extern.slf4j.Slf4j;
@@ -9,10 +10,10 @@ import org.springframework.stereotype.Component;
 
 import javax.annotation.PostConstruct;
 import javax.annotation.PreDestroy;
+import javax.annotation.Resource;
 import java.io.*;
 import java.net.Socket;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.*;
 
 /**
  * CppSocket 客户端 - 使用 Socket 池化管理
@@ -32,8 +33,16 @@ public class CppSocketClient {
 
     private BlockingQueue<Socket> socketPool;
 
+    @Resource
+    private CppSandboxExeManager exeManager;
+
+
     @PostConstruct
-    public void init() {
+    public void init() throws InterruptedException {
+        // 启动 .exe 进程
+        exeManager.startExe();
+        //TODO 得等待exe进程成功启动，后续可以尝试换个写法
+        Thread.sleep(2000);
         socketPool = new ArrayBlockingQueue<>(poolSize);
         try {
             for (int i = 0; i < poolSize; i++) {
@@ -44,8 +53,9 @@ public class CppSocketClient {
             log.error("初始化 Socket 池失败", e);
             throw new RuntimeException("初始化 Socket 池失败", e);
         }
+        // 启动一个定时检查任务来验证 exe 进程是否存活
+        startExeHealthCheck();
     }
-
     /**
      * 创建一个新的 Socket 连接。
      */
@@ -137,6 +147,24 @@ public class CppSocketClient {
             }
         }
     }
+    /**
+     * 启动 .exe 进程健康检查线程。
+     */
+    private void startExeHealthCheck() {
+        new Thread(() -> {
+            while (true) {
+                try {
+                    Thread.sleep(60000);  // 每分钟检查一次
+                    if (!exeManager.isExeProcessAlive()) {
+                        log.warn("C++沙箱程序进程已停止，尝试重启...");
+                        exeManager.startExe();  // 如果进程已经退出，重新启动
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        }).start();
+    }
 
     @PreDestroy
     public void shutdown() {
@@ -151,6 +179,10 @@ public class CppSocketClient {
                 }
             }
         }
-        log.info("Socket 池已关闭");
+
+        log.info("关闭 exe 进程...");
+        exeManager.stopExe();  // 停止 .exe 进程
+
+        log.info("Socket 池及 Exe 进程已关闭");
     }
 }
