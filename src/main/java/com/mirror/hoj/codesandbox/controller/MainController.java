@@ -5,6 +5,8 @@ import cn.hutool.core.io.resource.ResourceUtil;
 import com.mirror.hoj.codesandbox.CodeSandbox;
 import com.mirror.hoj.codesandbox.JavaDockerCodeSandbox;
 import com.mirror.hoj.codesandbox.JavaNativeCodeSandbox;
+import com.mirror.hoj.codesandbox.client.CppSocketClient;
+import com.mirror.hoj.codesandbox.enums.QuestionSubmitLanguageEnum;
 import com.mirror.hoj.codesandbox.model.ExecuteCodeRequest;
 import com.mirror.hoj.codesandbox.model.ExecuteCodeResponse;
 import lombok.extern.slf4j.Slf4j;
@@ -18,6 +20,7 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
+import java.util.UUID;
 
 /**
  * @author Mirror
@@ -31,6 +34,8 @@ public class MainController {
 
     private static final String AUTH_REQUEST_SECRET = "secretKey";
 
+    @Resource
+    CppSocketClient cppSocketClient;
 
     @Resource
     JavaDockerCodeSandbox javaDockerCodeSandbox;
@@ -62,21 +67,31 @@ public class MainController {
         if (executeCodeRequest == null) {
             throw new RuntimeException("请求参数为空");
         }
-        return javaDockerCodeSandbox.executeCode(executeCodeRequest);
-//        return javaNativeCodeSandbox.executeCode(executeCodeRequest);
+        ExecuteCodeResponse result = null;
+        if (QuestionSubmitLanguageEnum.JAVA.getValue().equals(executeCodeRequest.getLanguage())) {
+            result = javaDockerCodeSandbox.executeCode(executeCodeRequest);
+        } else if (QuestionSubmitLanguageEnum.CPP.getValue().equals(executeCodeRequest.getLanguage())) {
+            result = cppSocketClient.executeCode(executeCodeRequest);
+        }
+        return result;
     }
 
     @GetMapping("/test")
-    public Boolean test(HttpServletRequest request) {
-        CodeSandbox codeSandbox = new JavaNativeCodeSandbox();
+    public ExecuteCodeResponse test(HttpServletRequest request) {
         ExecuteCodeRequest executeCodeRequest = new ExecuteCodeRequest();
+        executeCodeRequest.setIdentifier(UUID.randomUUID().toString());
 //        executeCodeRequest.setInputList(Collections.singletonList("1 2"));
         executeCodeRequest.setInputFilePathList(Collections.singletonList("/home/ubuntu/hoj/question/1801181035134369793/4_0.in"));
 //        executeCodeRequest.setInputList(Arrays.asList("1 2","3 4"));
-        executeCodeRequest.setLanguage("java");
-        String code = ResourceUtil.readStr("testCode/SimpleComputeArgs/Main.java", StandardCharsets.UTF_8);
+        executeCodeRequest.setLanguage("cpp");
+        String code = ResourceUtil.readStr("testCode/SimpleComputeArgs/test.cpp", StandardCharsets.UTF_8);
         executeCodeRequest.setCode(code);
-        codeSandbox.executeCode(executeCodeRequest);
-        return true;
+        executeCodeRequest.setTimeLimit(10000L);
+        executeCodeRequest.setMemoryLimit(256L);
+        ExecuteCodeResponse res = cppSocketClient.executeCode(executeCodeRequest);
+//        ExecuteCodeResponse res2 = cppSocketClient.executeCode(executeCodeRequest);
+//        ExecuteCodeResponse res3 = cppSocketClient.executeCode(executeCodeRequest);
+        System.out.println(res);
+        return res;
     }
 }
