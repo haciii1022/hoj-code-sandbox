@@ -204,7 +204,7 @@ public class JavaDockerCodeSandbox extends JavaCodeSandboxTemplate {
             try {
                 // 等待统计信息收集完成
                 latch.await(2, TimeUnit.SECONDS);
-                executeMessage.setMemory(maxMemory[0]);
+                executeMessage.setMemory(maxMemory[0] / 1024);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 System.out.println("线程中断");
