@@ -10,6 +10,7 @@ import com.mirror.hoj.codesandbox.model.ExecuteMessage;
 import com.mirror.hoj.codesandbox.model.JudgeInfo;
 import com.mirror.hoj.codesandbox.utils.ProcessUtils;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.core.io.Resource;
 
 import java.io.File;
@@ -80,6 +81,9 @@ public abstract class JavaCodeSandboxTemplate implements CodeSandbox {
         if (!FileUtil.exist(globalCodePathName)) {
             FileUtil.mkdir(globalCodePathName);
         }
+        if (StringUtils.isBlank(code)) {
+            throw new RuntimeException(JudgeInfoMessageEnum.COMPILE_ERROR.getText());
+        }
         System.out.println(globalCodePathName);
         //把用户代码隔离开存放
         String userCodeParentPath = globalCodePathName + File.separator + UUID.randomUUID();
@@ -97,6 +101,7 @@ public abstract class JavaCodeSandboxTemplate implements CodeSandbox {
      */
     public ExecuteMessage compileFile(File userCodeFile) {
         log.info("开始编译文件: {}", userCodeFile.getAbsolutePath());
+
         //开一个进程Process编译class文件
 //        String compileCmd = String.format("javac -encoding UTF-8 %s", userCodeFile.getAbsolutePath());
         String compileCmd = String.format("/www/server/java/jdk1.8.0_371/bin/javac -encoding UTF-8 %s", userCodeFile.getAbsolutePath());
@@ -121,7 +126,7 @@ public abstract class JavaCodeSandboxTemplate implements CodeSandbox {
      * @param inputFilePathList
      * @return
      */
-    public List<ExecuteMessage> runFile(File userCodeFile, List<String> inputFilePathList,String identifier) {
+    public List<ExecuteMessage> runFile(File userCodeFile, List<String> inputFilePathList, String identifier) {
         String userCodeParentPath = userCodeFile.getParentFile().getAbsolutePath();
         List<ExecuteMessage> executeMessageList = new ArrayList<>();
         //记录一下总耗时
@@ -255,7 +260,7 @@ public abstract class JavaCodeSandboxTemplate implements CodeSandbox {
      */
     public ExecuteCodeResponse getErrorResponse(Throwable e) {
         ExecuteCodeResponse executeCodeResponse = new ExecuteCodeResponse();
-        executeCodeResponse.setOutputList(new ArrayList<>());
+//        executeCodeResponse.setOutputList(new ArrayList<>());
         executeCodeResponse.setMessage(e.getMessage());
         // 表示代码沙箱错误
         executeCodeResponse.setStatus(QuestionSubmitStatusEnum.FAILED.getValue());

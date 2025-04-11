@@ -10,13 +10,7 @@ import com.github.dockerjava.api.command.ExecCreateCmdResponse;
 import com.github.dockerjava.api.command.PullImageCmd;
 import com.github.dockerjava.api.command.PullImageResultCallback;
 import com.github.dockerjava.api.command.StatsCmd;
-import com.github.dockerjava.api.model.Bind;
-import com.github.dockerjava.api.model.Frame;
-import com.github.dockerjava.api.model.HostConfig;
-import com.github.dockerjava.api.model.PullResponseItem;
-import com.github.dockerjava.api.model.Statistics;
-import com.github.dockerjava.api.model.StreamType;
-import com.github.dockerjava.api.model.Volume;
+import com.github.dockerjava.api.model.*;
 import com.github.dockerjava.core.DockerClientBuilder;
 import com.github.dockerjava.core.command.ExecStartResultCallback;
 import com.mirror.hoj.codesandbox.model.ExecuteCodeRequest;
@@ -30,11 +24,10 @@ import org.springframework.stereotype.Component;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 @Slf4j
@@ -44,6 +37,25 @@ public class JavaDockerCodeSandbox extends JavaCodeSandboxTemplate {
     private static long TIME_LIMIT = 5000L; //单位ms
     private static long MEMORY_LIMIT = 5000L; //单位kb
     private static final long DOCKER_MEMORY_MIN = 10 * 1024 * 1024; // docker容器启动最低设置10M
+    // 在类中定义线程池（例如 ScheduledExecutorService）
+    private static final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2);
+//    private static ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
+//    static {
+//        DockerClient dockerClient = DockerClientBuilder.getInstance().build();
+//        scheduler.scheduleAtFixedRate(() -> {
+//            try {
+//                List<Container> containers = dockerClient.listContainersCmd()
+//                        .withStatusFilter(Collections.singleton("exited")) // 筛选已停止的容器
+//                        .exec();
+//                for (Container container : containers) {
+//                    dockerClient.removeContainerCmd(container.getId()).exec();
+//                    log.info("删除容器：{}", container.getId());
+//                }
+//            } catch (Exception e) {
+//                log.error("删除容器异常：{}", e.getMessage());
+//            }
+//        }, 0, 1, TimeUnit.MINUTES); // 初始延迟0秒，周期1分钟
+//    }
 
     @Override
     public List<ExecuteMessage> runFile(File userCodeFile, List<String> inputFilePathList,String identifier) {
@@ -75,7 +87,7 @@ public class JavaDockerCodeSandbox extends JavaCodeSandboxTemplate {
         CreateContainerCmd containerCmd = dockerClient.createContainerCmd(image);
         //挂载文件
         HostConfig hostConfig = new HostConfig();
-        hostConfig.withMemory(Math.max(MEMORY_LIMIT * 1024, DOCKER_MEMORY_MIN));
+        hostConfig.withMemory(Math.max(MEMORY_LIMIT * 1024 * 2, DOCKER_MEMORY_MIN));
         hostConfig.withMemorySwap(0L);
         hostConfig.withCpuCount(1L);
         hostConfig.withReadonlyRootfs(true);// 设置只读根文件系统,不能写
@@ -205,24 +217,35 @@ public class JavaDockerCodeSandbox extends JavaCodeSandboxTemplate {
                 // 等待统计信息收集完成
                 latch.await(2, TimeUnit.SECONDS);
                 executeMessage.setMemory(maxMemory[0] / 1024);
+//                dockerClient.stopContainerCmd(containerId).exec();
+//                dockerClient.removeContainerCmd(containerId).exec();
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 System.out.println("线程中断");
             }
-            //开一个新线程，十秒钟之后执行删除容器的操作
+            //开一个新线程，5秒钟之后执行删除容器的操作
             log.info("等待5s后删除容器");
-            new Thread(() -> {
+            // 修改删除逻辑为使用线程池
+            scheduler.schedule(() -> {
                 try {
-                    Thread.sleep(5000);
-
                     dockerClient.stopContainerCmd(containerId).exec();
-                    dockerClient.removeContainerCmd(containerId).exec();
-                    log.info("删除容器：{}", containerId);
-                } catch (InterruptedException e) {
-                    log.error("删除容器异常");
-                    throw new RuntimeException(e);
+                    dockerClient.removeContainerCmd(containerId).withForce(true).exec();
+                } catch (Exception e) {
+                    log.error("删除容器失败: {}", containerId, e);
                 }
-            }).start();
+            }, 5, TimeUnit.SECONDS);
+//            new Thread(() -> {
+//                try {
+//                    Thread.sleep(5000);
+//
+//                    dockerClient.stopContainerCmd(containerId).exec();
+//                    dockerClient.removeContainerCmd(containerId).exec();
+//                    log.info("删除容器：{}", containerId);
+//                } catch (InterruptedException e) {
+//                    log.error("删除容器异常");
+////                    throw new RuntimeException(e);
+//                }
+//            }).start();
         }
         log.info("执行输入用例，获取执行结果列表出参: {}", executeMessageList);
         return executeMessageList;

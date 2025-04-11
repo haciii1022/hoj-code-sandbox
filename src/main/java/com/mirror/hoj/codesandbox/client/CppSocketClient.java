@@ -156,7 +156,6 @@ public class CppSocketClient {
     private void startExeHealthCheck() {
         new Thread(() -> {
             while (isHealthCheckRunning) {
-                log.info("开始检查");
                 try {
                     Thread.sleep(60000);  // 每分钟检查一次
                     if (isHealthCheckRunning &&!exeManager.isExeProcessAlive()) {
